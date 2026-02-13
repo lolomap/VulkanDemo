@@ -54,7 +54,6 @@ export namespace vulkan_data
     {
         glm::mat4 view;
         glm::mat4 proj;
-        float time;
     };
 
     struct GPU_TranformUBO
@@ -193,9 +192,9 @@ namespace vulkan_configs
         VkRect2D defaultScissors;
         std::vector<VkDynamicState> dynamicStates;
 
-        //std::vector<VkDescriptorSetLayoutBinding> uniforms;
+        std::vector<VkDescriptorSetLayoutBinding> uniforms;
         int vertexBindingsCount, fragmentBindingsCount;
-        //VkDescriptorSetLayoutCreateInfo uniformsConfig;
+        VkDescriptorSetLayoutCreateInfo uniformsConfig;
 
         VkGraphicsPipelineCreateInfo pipelineConfig;
     };
@@ -204,7 +203,7 @@ namespace vulkan_configs
     {
         VkPipeline instance;
         VkPipelineLayout layout;
-        //VkDescriptorSetLayout uniformsLayout;
+        VkDescriptorSetLayout uniformsLayout;
         VkViewport viewport;
         VkRect2D scissors;
     };
@@ -219,6 +218,7 @@ export namespace vulkan_render
                  std::span<char> vertexShader, std::span<char> fragmentShader);
         ~Renderer();
 
+        // Isn't safe for multiple calls, just simple overriding buffers for demo
         void RegisterObjects(std::span<vulkan_data::RenderObject> objects);
         void ResizeWindow(int width, int height);
 
@@ -246,8 +246,10 @@ export namespace vulkan_render
         VkBuffer indices;
         VkBuffer stagingVertices;
         VkBuffer stagingIndices;
-        std::vector<VkDeviceMemory> uniformsMemory;
-        std::vector<VkBuffer> uniforms;
+        std::vector<VkDeviceMemory> modelUniformsMemory;
+        std::vector<VkBuffer> modelUniforms;
+        std::vector<VkDeviceMemory> vpUniformsMemory;
+        std::vector<VkBuffer> vpUniforms;
         std::vector<VkCommandBuffer> graphicsCommandBuffers;
         std::vector<VkCommandBuffer> transferCommandBuffers;
         std::vector<VkImage> frames;
@@ -293,6 +295,7 @@ export namespace vulkan_render
         void SetupRenderBuffers();
         void SetupSync();
 
+        void UpdateUniformBuffer(uint32_t currentImage);
         void CopyBuffer(VkBuffer src, size_t offset, VkBuffer dst, VkDeviceSize size);
     };
 }

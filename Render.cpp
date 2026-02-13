@@ -8,7 +8,9 @@ module;
 #include <cstddef>
 #include <algorithm>
 #include <stdexcept>
+#include <chrono>
 
+#define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -493,7 +495,7 @@ void vulkan_render::Renderer::ReleaseSwapchain()
     vkDestroyRenderPass(device, baseRenderPass, nullptr);
     vkDestroyPipeline(device, pipeline.instance, nullptr);
     vkDestroyPipelineLayout(device, pipeline.layout, nullptr);
-    //vkDestroyDescriptorSetLayout(device, pipeline.uniformsLayout, nullptr);
+    vkDestroyDescriptorSetLayout(device, pipeline.uniformsLayout, nullptr);
 
     for (VkImageView &frameView : frameViews)
     {
@@ -531,19 +533,21 @@ void vulkan_render::Renderer::SetupPipelineConfig()
         .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
     });
 
-//    basePipelineConfig.uniforms.push_back({
-//        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-//        .descriptorCount = 1,
-//        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-//        .pImmutableSamplers = nullptr
-//    }); // GPU_GlobalUBO
-//
-//    basePipelineConfig.uniforms.push_back({
-//        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-//        .descriptorCount = 1,
-//        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-//        .pImmutableSamplers = nullptr
-//    }); // GPU_TransformUBO
+    basePipelineConfig.uniforms.push_back({
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        .pImmutableSamplers = nullptr
+    }); // GPU_GlobalUBO
+
+    basePipelineConfig.uniforms.push_back({
+        .binding = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        .pImmutableSamplers = nullptr
+    }); // GPU_TransformUBO
 
     basePipelineConfig.vertexInputConfig = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
@@ -592,17 +596,16 @@ void vulkan_render::Renderer::SetupPipelineConfig()
         .pDynamicStates = basePipelineConfig.dynamicStates.data()
     };
 
-//    basePipelineConfig.uniformsConfig = {
-//        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-//        .bindingCount = static_cast<uint32_t>(basePipelineConfig.uniforms.size()),
-//        .pBindings = basePipelineConfig.uniforms.data()
-//    };
+    basePipelineConfig.uniformsConfig = {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = static_cast<uint32_t>(basePipelineConfig.uniforms.size()),
+        .pBindings = basePipelineConfig.uniforms.data()
+    };
 
     basePipelineConfig.pipelineLayoutConfig = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .pNext = nullptr,
-         //.setLayoutCount = 1,
-        .setLayoutCount = 0,
+        .setLayoutCount = 1,
         .pushConstantRangeCount = 0,
         .pPushConstantRanges = nullptr
     };
@@ -684,13 +687,6 @@ void vulkan_render::Renderer::SetupPipeline()
         .pSpecializationInfo = nullptr
     });
 
-    VkDescriptorSetLayoutBinding baseBinding {
-        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .descriptorCount = 1,
-        .pImmutableSamplers = nullptr
-    };
-    baseBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
     // Fragment
     VkShaderModule fragmentModule;
     shaderModuleCreateConfig = {
@@ -711,17 +707,13 @@ void vulkan_render::Renderer::SetupPipeline()
         .pSpecializationInfo = nullptr
     });
 
-    baseBinding.binding = 0;
-    baseBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
     //
 
-//    vkResult = vkCreateDescriptorSetLayout(device, &basePipelineConfig.uniformsConfig,
-//                                           nullptr, &pipeline.uniformsLayout);
-//    if (vkResult != VK_SUCCESS)
-//        LOG(CRITICAL, "Failed to create uniforms layout");
-//    basePipelineConfig.pipelineLayoutConfig.pSetLayouts = &pipeline.uniformsLayout;
-    basePipelineConfig.pipelineLayoutConfig.pSetLayouts = nullptr;
+    vkResult = vkCreateDescriptorSetLayout(device, &basePipelineConfig.uniformsConfig,
+                                           nullptr, &pipeline.uniformsLayout);
+    if (vkResult != VK_SUCCESS)
+        LOG(CRITICAL, "Failed to create uniforms layout");
+    basePipelineConfig.pipelineLayoutConfig.pSetLayouts = &pipeline.uniformsLayout;
 
     vkResult = vkCreatePipelineLayout(
         device,
@@ -974,6 +966,69 @@ void vulkan_render::Renderer::SetupObjectsBuffers()
 
     memset(verticesBinded.data(), 0, stagingVertexBufferConfig.size);
     memset(indicesBinded.data(), 0, stagingIndexBufferConfig.size);
+
+    vpUniforms.resize(frames.size());
+    vpUniformsMemory.resize(frames.size());
+    for (size_t i = 0; i < frames.size(); i++)
+    {
+        VkBufferCreateInfo uniformBufferConfig {
+                .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                .pNext = nullptr,
+                .size = sizeof(vulkan_data::GPU_GlobalUBO),
+                .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                .sharingMode = VK_SHARING_MODE_EXCLUSIVE
+        };
+        vkResult = vkCreateBuffer(device, &uniformBufferConfig, nullptr, &vpUniforms[i]);
+        if (vkResult != VK_SUCCESS)
+            LOG(CRITICAL, "Failed to create buffer for uniform. Code: %d", vkResult);
+
+        VkMemoryAllocateInfo allocateUniform {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                .pNext = nullptr,
+                .allocationSize = memoryRequirements.size,
+                .memoryTypeIndex = cpuAccessMemTypeIndex
+        };
+
+        vkResult = vkAllocateMemory(device, &allocateUniform, nullptr, &vpUniformsMemory[i]);
+        if (vkResult != VK_SUCCESS)
+            LOG(CRITICAL, "Failed to allocate GPU memory for uniform. Code: %d", vkResult);
+
+        vkResult = vkBindBufferMemory(device, vpUniforms[i], vpUniformsMemory[i], 0);
+        if (vkResult != VK_SUCCESS)
+            LOG(CRITICAL, "Failed to bind GPU memory for uniform. Code: %d", vkResult);
+    }
+
+    modelUniforms.resize(frames.size());
+    modelUniformsMemory.resize(frames.size());
+    for (size_t i = 0; i < frames.size(); i++)
+    {
+        VkBufferCreateInfo uniformBufferConfig {
+                .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                .pNext = nullptr,
+                .size = sizeof(vulkan_data::GPU_TranformUBO),
+                .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                .sharingMode = VK_SHARING_MODE_EXCLUSIVE
+        };
+        vkResult = vkCreateBuffer(device, &uniformBufferConfig, nullptr, &modelUniforms[i]);
+        if (vkResult != VK_SUCCESS)
+            LOG(CRITICAL, "Failed to create buffer for uniform. Code: %d", vkResult);
+
+        VkMemoryAllocateInfo allocateUniform {
+                .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                .pNext = nullptr,
+                .allocationSize = memoryRequirements.size,
+                .memoryTypeIndex = cpuAccessMemTypeIndex
+        };
+
+        vkResult = vkAllocateMemory(device, &allocateUniform, nullptr, &modelUniformsMemory[i]);
+        if (vkResult != VK_SUCCESS)
+            LOG(CRITICAL, "Failed to allocate GPU memory for uniform. Code: %d", vkResult);
+
+        vkResult = vkBindBufferMemory(device, modelUniforms[i], modelUniformsMemory[i], 0);
+        if (vkResult != VK_SUCCESS)
+            LOG(CRITICAL, "Failed to bind GPU memory for uniform. Code: %d", vkResult);
+    }
+
 }
 
 void vulkan_render::Renderer::SetupRenderBuffers()
@@ -1172,6 +1227,8 @@ void vulkan_render::Renderer::Draw()
             break;
     }
 
+    UpdateUniformBuffer(imageIndex);
+
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
     {
         vkWaitForFences(device, 1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
@@ -1285,7 +1342,35 @@ void vulkan_render::Renderer::Draw()
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-// Isn't safe for multiple calls, just simple overriding buffers for demo
+// Rotate camera and objects right here to simplify
+void vulkan_render::Renderer::UpdateUniformBuffer(uint32_t currentImage)
+{
+    // Calculate deltaTime to rotate without depending on FPS
+    static auto startTime = std::chrono::high_resolution_clock::now();
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    float deltaTime = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+    vulkan_data::GPU_GlobalUBO camera;
+    vulkan_data::GPU_TranformUBO transform;
+
+    // Rotate objects by 90 degrees per second
+    transform.model = glm::rotate(glm::mat4(1.0f), deltaTime * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    // Rotate camera by 45 defrees upside-down
+    camera.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    // Perspective projection, vertical FOV is 45 degrees
+    camera.proj = glm::perspective(glm::radians(45.0f), surfaceInfo.extent.width / (float) surfaceInfo.extent.height, 0.1f, 10.0f);
+    camera.proj[1][1] *= -1; // GLM uses reversed Y like in OpenGL. Fix it for Vulkan
+
+    void* data;
+    vkMapMemory(device, vpUniformsMemory[currentImage], 0, sizeof(camera), 0, &data);
+    memcpy(data, &camera, sizeof(camera));
+    vkUnmapMemory(device, vpUniformsMemory[currentImage]);
+
+    vkMapMemory(device, modelUniformsMemory[currentImage], 0, sizeof(transform), 0, &data);
+    memcpy(data, &transform, sizeof(transform));
+    vkUnmapMemory(device, modelUniformsMemory[currentImage]);
+}
+
 void vulkan_render::Renderer::RegisterObjects(std::span<vulkan_data::RenderObject> newObjects)
 {
     vulkan_data::GPU_Vertex *verticesStart = verticesBinded.data();
@@ -1335,6 +1420,13 @@ vulkan_render::Renderer::~Renderer()
     ReleaseSwapchain();
 
     vkUnmapMemory(device, stagingVerticesMemory);
+
+    for (size_t i = 0; i < frames.size(); i++) {
+        vkDestroyBuffer(device, vpUniforms[i], nullptr);
+        vkFreeMemory(device, vpUniformsMemory[i], nullptr);
+        vkDestroyBuffer(device, modelUniforms[i], nullptr);
+        vkFreeMemory(device, modelUniformsMemory[i], nullptr);
+    }
 
     vkDestroyBuffer(device, vertices, nullptr);
     vkDestroyBuffer(device, stagingVertices, nullptr);
