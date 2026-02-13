@@ -61,6 +61,8 @@ vulkan_render::Renderer::Renderer(GLFWwindow *window, const size_t &vertexBuffer
     SetupPipeline();
     SetupObjectsBuffers();
     SetupRenderBuffers();
+    SetupDescriptorPool();
+    SetupDescriptorSets();
     CopyBuffer(stagingVertices, 0, vertices, verticesBinded.size() * sizeof(vulkan_data::GPU_Vertex));
     CopyBuffer(stagingIndices, 0, indices, indicesBinded.size() * sizeof(uint16_t));
     SetupSync();
@@ -471,6 +473,8 @@ void vulkan_render::Renderer::RecreateSwapchain()
     SetupRenderPasses();
     SetupPipeline();
     SetupRenderBuffers();
+    SetupDescriptorPool();
+    SetupDescriptorSets();
 }
 
 void vulkan_render::Renderer::ReleaseSwapchain()
@@ -503,6 +507,16 @@ void vulkan_render::Renderer::ReleaseSwapchain()
     }
 
     vkDestroySwapchainKHR(device, swapchain, nullptr);
+
+    for (size_t i = 0; i < frames.size(); i++)
+    {
+        vkDestroyBuffer(device, vpUniforms[i], nullptr);
+        vkFreeMemory(device, vpUniformsMemory[i], nullptr);
+        vkDestroyBuffer(device, modelUniforms[i], nullptr);
+        vkFreeMemory(device, modelUniformsMemory[i], nullptr);
+    }
+
+    vkDestroyDescriptorPool(device, descriptors.pool, nullptr);
 }
 
 void vulkan_render::Renderer::SetupPipelineConfig()
@@ -572,7 +586,7 @@ void vulkan_render::Renderer::SetupPipelineConfig()
         .rasterizerDiscardEnable = VK_FALSE,
         .polygonMode = VK_POLYGON_MODE_FILL,
         .cullMode = VK_CULL_MODE_BACK_BIT,
-        .frontFace = VK_FRONT_FACE_CLOCKWISE,
+        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .depthBiasEnable = VK_FALSE,
         .lineWidth = 1.0f,
     };
@@ -982,10 +996,12 @@ void vulkan_render::Renderer::SetupObjectsBuffers()
         if (vkResult != VK_SUCCESS)
             LOG(CRITICAL, "Failed to create buffer for uniform. Code: %d", vkResult);
 
+        VkMemoryRequirements ubMemoryRequirements;
+        vkGetBufferMemoryRequirements(device, vpUniforms[i], &ubMemoryRequirements);
         VkMemoryAllocateInfo allocateUniform {
                 .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
                 .pNext = nullptr,
-                .allocationSize = memoryRequirements.size,
+                .allocationSize = ubMemoryRequirements.size,
                 .memoryTypeIndex = cpuAccessMemTypeIndex
         };
 
@@ -1013,10 +1029,12 @@ void vulkan_render::Renderer::SetupObjectsBuffers()
         if (vkResult != VK_SUCCESS)
             LOG(CRITICAL, "Failed to create buffer for uniform. Code: %d", vkResult);
 
+        VkMemoryRequirements ubMemoryRequirements;
+        vkGetBufferMemoryRequirements(device, modelUniforms[i], &ubMemoryRequirements);
         VkMemoryAllocateInfo allocateUniform {
                 .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
                 .pNext = nullptr,
-                .allocationSize = memoryRequirements.size,
+                .allocationSize = ubMemoryRequirements.size,
                 .memoryTypeIndex = cpuAccessMemTypeIndex
         };
 
@@ -1110,6 +1128,91 @@ void vulkan_render::Renderer::SetupRenderBuffers()
     vkResult = vkAllocateCommandBuffers(device, &allocateConfig, transferCommandBuffers.data());
     if (vkResult != VK_SUCCESS)
         LOG(CRITICAL, "Failed to allocate transfer command buffers. Code: %d", vkResult);
+}
+
+void vulkan_render::Renderer::SetupDescriptorPool()
+{
+    // Hardcoded! Create pool for 2 uniforms: viewProject and model
+
+    VkResult vkResult;
+
+    // We need one descriptor for each uniform and each frame in total
+    VkDescriptorPoolSize poolSize {
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = static_cast<uint32_t>(frames.size() * 2)
+    };
+
+    // We need pool with 1 set for each frame, each set has all uniform descriptors for frame
+    VkDescriptorPoolCreateInfo poolConfig {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .pNext = nullptr,
+        .maxSets = static_cast<uint32_t>(frames.size()),
+        .poolSizeCount = 1,
+        .pPoolSizes = &poolSize,
+    };
+
+    vkResult = vkCreateDescriptorPool(device, &poolConfig, nullptr, &descriptors.pool);
+    if (vkResult != VK_SUCCESS)
+        LOG(CRITICAL, "Failed to create descriptor pool. Code: %d", vkResult);
+}
+
+void vulkan_render::Renderer::SetupDescriptorSets()
+{
+    VkResult vkResult;
+
+    std::vector<VkDescriptorSetLayout> layouts(frames.size(), pipeline.uniformsLayout);
+    VkDescriptorSetAllocateInfo setAllocateConfig {
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .descriptorPool = descriptors.pool,
+        .descriptorSetCount = static_cast<uint32_t>(frames.size()),
+        .pSetLayouts = layouts.data()
+    };
+
+    descriptors.descriptorSets.resize(frames.size());
+    vkResult = vkAllocateDescriptorSets(device, &setAllocateConfig, descriptors.descriptorSets.data());
+    if (vkResult != VK_SUCCESS)
+        LOG(CRITICAL, "Failed to allocate descriptor sets. Code: %d", vkResult);
+
+    for (size_t i = 0; i < frames.size(); i++)
+    {
+        VkDescriptorBufferInfo vpBufferConfig {
+            .buffer = vpUniforms[i],
+            .offset = 0,
+            .range = sizeof(vulkan_data::GPU_GlobalUBO)
+        };
+
+        VkDescriptorBufferInfo modelBufferConfig {
+            .buffer = modelUniforms[i],
+            .offset = 0,
+            .range = sizeof(vulkan_data::GPU_TranformUBO)
+        };
+
+        VkWriteDescriptorSet vpWrite {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .pNext = nullptr,
+            .dstSet = descriptors.descriptorSets[i],
+            .dstBinding = 0,
+            .dstArrayElement = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .pBufferInfo = &vpBufferConfig
+        };
+
+        VkWriteDescriptorSet modelWrite {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = nullptr,
+                .dstSet = descriptors.descriptorSets[i],
+                .dstBinding = 1,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .pBufferInfo = &modelBufferConfig
+        };
+
+        std::array<VkWriteDescriptorSet, 2> writes = {vpWrite, modelWrite};
+        vkUpdateDescriptorSets(device, 2, writes.data(), 0, nullptr);
+    }
 }
 
 void vulkan_render::Renderer::SetupSync()
@@ -1287,6 +1390,17 @@ void vulkan_render::Renderer::Draw()
             VK_INDEX_TYPE_UINT16
         );
 
+        vkCmdBindDescriptorSets(
+            graphicsCommandBuffers[currentFrame],
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipeline.layout,
+            0,
+            1,
+            &descriptors.descriptorSets[currentFrame],
+            0,
+            nullptr
+        );
+
         vkCmdDrawIndexed(
             graphicsCommandBuffers[currentFrame],
             static_cast<uint32_t>(object.mesh.indices.size()),
@@ -1420,13 +1534,6 @@ vulkan_render::Renderer::~Renderer()
     ReleaseSwapchain();
 
     vkUnmapMemory(device, stagingVerticesMemory);
-
-    for (size_t i = 0; i < frames.size(); i++) {
-        vkDestroyBuffer(device, vpUniforms[i], nullptr);
-        vkFreeMemory(device, vpUniformsMemory[i], nullptr);
-        vkDestroyBuffer(device, modelUniforms[i], nullptr);
-        vkFreeMemory(device, modelUniformsMemory[i], nullptr);
-    }
 
     vkDestroyBuffer(device, vertices, nullptr);
     vkDestroyBuffer(device, stagingVertices, nullptr);

@@ -56,7 +56,60 @@ int main()
         }
     };
 
-    vulkan_data::RenderObject objects[] = {rect};
+    vulkan_data::RenderObject cube {
+        .transform = {.pos = {0.0f, 0.0f, 0.0f}},
+        .mesh = {
+            .vertices = {
+                // Front (red)
+                {.pos = {-0.5f, -0.5f,  0.5f}, .color = {1.0f, 0.0f, 0.0f}},
+                {.pos = { 0.5f, -0.5f,  0.5f}, .color = {1.0f, 0.0f, 0.0f}},
+                {.pos = { 0.5f,  0.5f,  0.5f}, .color = {1.0f, 0.0f, 0.0f}},
+                {.pos = {-0.5f,  0.5f,  0.5f}, .color = {1.0f, 0.0f, 0.0f}},
+
+                // Back (green)
+                {.pos = {-0.5f, -0.5f, -0.5f}, .color = {0.0f, 1.0f, 0.0f}},
+                {.pos = { 0.5f, -0.5f, -0.5f}, .color = {0.0f, 1.0f, 0.0f}},
+                {.pos = { 0.5f,  0.5f, -0.5f}, .color = {0.0f, 1.0f, 0.0f}},
+                {.pos = {-0.5f,  0.5f, -0.5f}, .color = {0.0f, 1.0f, 0.0f}},
+
+                // Left (blue)
+                {.pos = {-0.5f, -0.5f, -0.5f}, .color = {0.0f, 0.0f, 1.0f}},
+                {.pos = {-0.5f, -0.5f,  0.5f}, .color = {0.0f, 0.0f, 1.0f}},
+                {.pos = {-0.5f,  0.5f,  0.5f}, .color = {0.0f, 0.0f, 1.0f}},
+                {.pos = {-0.5f,  0.5f, -0.5f}, .color = {0.0f, 0.0f, 1.0f}},
+
+                // Right (yellow)
+                {.pos = {0.5f, -0.5f, -0.5f}, .color = {1.0f, 1.0f, 0.0f}},
+                {.pos = {0.5f, -0.5f,  0.5f}, .color = {1.0f, 1.0f, 0.0f}},
+                {.pos = {0.5f,  0.5f,  0.5f}, .color = {1.0f, 1.0f, 0.0f}},
+                {.pos = {0.5f,  0.5f, -0.5f}, .color = {1.0f, 1.0f, 0.0f}},
+
+                // Top (pink)
+                {.pos = {-0.5f, 0.5f, -0.5f}, .color = {1.0f, 0.0f, 1.0f}},
+                {.pos = { 0.5f, 0.5f, -0.5f}, .color = {1.0f, 0.0f, 1.0f}},
+                {.pos = { 0.5f, 0.5f,  0.5f}, .color = {1.0f, 0.0f, 1.0f}},
+                {.pos = {-0.5f, 0.5f,  0.5f}, .color = {1.0f, 0.0f, 1.0f}},
+
+                // Bottom (cyan)
+                {.pos = {-0.5f, -0.5f, -0.5f}, .color = {0.0f, 1.0f, 1.0f}},
+                {.pos = { 0.5f, -0.5f, -0.5f}, .color = {0.0f, 1.0f, 1.0f}},
+                {.pos = { 0.5f, -0.5f,  0.5f}, .color = {0.0f, 1.0f, 1.0f}},
+                {.pos = {-0.5f, -0.5f,  0.5f}, .color = {0.0f, 1.0f, 1.0f}},
+            },
+
+            .indices = {
+                0,1,2, 2,3,0,        // Front
+                4,6,5, 6,4,7,        // Back
+                8,9,10, 10,11,8,     // Left
+                12,14,13, 14,12,15,  // Right
+                16,17,18, 18,19,16,  // Top
+                20,22,21, 22,20,23   // Bottom
+            }
+        }
+    };
+
+
+    vulkan_data::RenderObject objects[] = {cube};
     renderer->RegisterObjects(objects);
 
 

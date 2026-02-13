@@ -207,6 +207,12 @@ namespace vulkan_configs
         VkViewport viewport;
         VkRect2D scissors;
     };
+
+    struct Descriptors
+    {
+        VkDescriptorPool pool;
+        std::vector<VkDescriptorSet> descriptorSets;
+    };
 }
 
 export namespace vulkan_render
@@ -268,6 +274,7 @@ export namespace vulkan_render
         vulkan_configs::PipelineConfig basePipelineConfig;
         vulkan_configs::PipelineBinding pipelineBinding;
         vulkan_configs::Pipeline pipeline;
+        vulkan_configs::Descriptors descriptors;
         std::vector<VkPipelineShaderStageCreateInfo> stagesConfigs;
         size_t currentFrame = 0;
 
@@ -293,6 +300,8 @@ export namespace vulkan_render
         void SetupPipeline();
         void SetupObjectsBuffers();
         void SetupRenderBuffers();
+        void SetupDescriptorPool();
+        void SetupDescriptorSets();
         void SetupSync();
 
         void UpdateUniformBuffer(uint32_t currentImage);
