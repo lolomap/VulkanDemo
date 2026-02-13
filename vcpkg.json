@@ -1,0 +1,8 @@
+{
+	"dependencies": [
+		"boost-lockfree",
+		"vulkan",
+		"glfw3",
+		"glm"
+	]
+}
